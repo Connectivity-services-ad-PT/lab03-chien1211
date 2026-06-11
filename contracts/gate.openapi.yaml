@@ -1,0 +1,393 @@
+openapi: 3.1.0
+info:
+  title: Smart Campus — Access Gate API
+  version: 1.0.0
+  description: |
+    Contract của nhóm A3 (team-gate) cho FIT4110 Lab 03.
+    Phục vụ hai luồng:
+      - Pair 03: Core Business (A6) → Access Gate (A3) — điều khiển cổng.
+      - Pair 10: Access Gate (A3) → Core Business (A6) — xác minh quyền ra/vào.
+servers:
+  - url: http://localhost:4010
+    description: Prism mock server
+  - url: http://localhost:8000
+    description: Local development server
+tags:
+  - name: system
+    description: Health check
+  - name: gate-control
+    description: Điều khiển phần cứng cổng ra/vào (Pair 03)
+  - name: access-policy
+    description: Xác minh quyền ra/vào (Pair 10)
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Kiểm tra trạng thái service
+      security: []
+      responses:
+        "200":
+          description: Service đang hoạt động
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    service: access-gate
+                    version: 1.0.0
+
+  /api/v1/gates/{gateId}/command:
+    post:
+      tags: [gate-control]
+      operationId: executeGateCommand
+      summary: Nhận lệnh điều khiển cổng từ hệ thống trung tâm
+      description: |
+        Core Business gửi lệnh điều khiển cổng vật lý.
+        Lệnh EMERGENCY_OPEN bắt buộc phải kèm trường `reason`.
+        Trả 409 nếu cổng đang bị kẹt cơ học hoặc mất điện mô-tơ.
+      parameters:
+        - name: gateId
+          in: path
+          required: true
+          description: Mã định danh của cổng an ninh (VD. GATE-A-01)
+          schema:
+            type: string
+            minLength: 3
+            example: GATE-A-01
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GateCommandRequest"
+            examples:
+              open_gate:
+                value:
+                  command: OPEN
+                  requestedBy: CORE-SYS-01
+              emergency_open:
+                value:
+                  command: EMERGENCY_OPEN
+                  requestedBy: CORE-SYS-01
+                  reason: Fire alarm triggered at zone B
+              lockdown:
+                value:
+                  command: LOCKDOWN
+                  requestedBy: CORE-SYS-01
+                  reason: Security breach detected
+      responses:
+        "200":
+          description: Lệnh được thực thi thành công
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateCommandResponse"
+              examples:
+                success_open:
+                  value:
+                    gateId: GATE-A-01
+                    status: SUCCESS
+                    gateStatus: OPENED
+                    executedAt: "2026-05-13T08:30:01+07:00"
+        "400":
+          description: Request không hợp lệ (thiếu field hoặc sai command)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                missing_reason:
+                  value:
+                    type: https://smart-campus.local/problems/validation-error
+                    title: Validation error
+                    status: 400
+                    detail: reason is required for EMERGENCY_OPEN command
+                    instance: /api/v1/gates/GATE-A-01/command
+        "401":
+          description: Thiếu hoặc sai token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                unauthorized:
+                  value:
+                    type: https://smart-campus.local/problems/unauthorized
+                    title: Unauthorized
+                    status: 401
+                    detail: Missing or invalid bearer token
+                    instance: /api/v1/gates/GATE-A-01/command
+        "404":
+          description: Không tìm thấy cổng có gateId này
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                gate_not_found:
+                  value:
+                    type: https://smart-campus.local/problems/gate-not-found
+                    title: Gate not found
+                    status: 404
+                    detail: Gate GATE-Z-99 does not exist
+                    instance: /api/v1/gates/GATE-Z-99/command
+        "409":
+          description: Xung đột trạng thái cổng (kẹt cơ học, mất điện mô-tơ)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                gate_stuck:
+                  value:
+                    type: https://smart-campus.local/problems/gate-hardware-failure
+                    title: Gate hardware failure
+                    status: 409
+                    detail: Gate GATE-A-01 is mechanically stuck and cannot execute OPEN
+                    instance: /api/v1/gates/GATE-A-01/command
+
+  /api/v1/access/verify:
+    post:
+      tags: [access-policy]
+      operationId: verifyAccess
+      summary: Xác minh quyền ra/vào khi có người quẹt thẻ
+      description: |
+        Access Gate gửi thông tin quẹt thẻ lên Core Business để xin quyết định.
+        Trường `direction` bắt buộc để Core Business ngăn chặn anti-passback.
+        Core Business cam kết SLA phản hồi < 300ms. Access Gate set timeout 500ms.
+        Nếu Core timeout → Access Gate chuyển sang Fail-Closed (giữ cổng đóng).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessVerifyRequest"
+            examples:
+              card_swipe_in:
+                value:
+                  cardId: CARD-NV-0042
+                  gateId: GATE-A-01
+                  direction: IN
+                  timestamp: "2026-05-13T08:30:00+07:00"
+              card_swipe_out:
+                value:
+                  cardId: CARD-NV-0042
+                  gateId: GATE-A-01
+                  direction: OUT
+                  timestamp: "2026-05-13T08:30:00+07:00"
+      responses:
+        "200":
+          description: Trả về quyết định cho phép hoặc từ chối
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessVerifyResponse"
+              examples:
+                granted:
+                  value:
+                    decision: GRANTED
+                    logId: LOG-20260513-0001
+                    reason: null
+                denied_expired:
+                  value:
+                    decision: DENIED
+                    logId: LOG-20260513-0002
+                    reason: Thẻ hết hạn
+        "400":
+          description: Request không hợp lệ
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                missing_direction:
+                  value:
+                    type: https://smart-campus.local/problems/validation-error
+                    title: Validation error
+                    status: 400
+                    detail: direction is required
+                    instance: /api/v1/access/verify
+                invalid_direction:
+                  value:
+                    type: https://smart-campus.local/problems/validation-error
+                    title: Validation error
+                    status: 400
+                    detail: direction must be IN or OUT
+                    instance: /api/v1/access/verify
+        "401":
+          description: Thiếu hoặc sai token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                unauthorized:
+                  value:
+                    type: https://smart-campus.local/problems/unauthorized
+                    title: Unauthorized
+                    status: 401
+                    detail: Missing or invalid bearer token
+                    instance: /api/v1/access/verify
+        "500":
+          description: Lỗi hệ thống trung tâm
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                server_error:
+                  value:
+                    type: https://smart-campus.local/problems/internal-error
+                    title: Internal server error
+                    status: 500
+                    detail: Core Business processing failed
+                    instance: /api/v1/access/verify
+        "503":
+          description: Hệ thống trung tâm quá tải hoặc timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              examples:
+                overloaded:
+                  value:
+                    type: https://smart-campus.local/problems/service-unavailable
+                    title: Service unavailable
+                    status: 503
+                    detail: Core Business is overloaded. Gate switching to Fail-Closed mode.
+                    instance: /api/v1/access/verify
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    GateCommand:
+      type: string
+      enum: [OPEN, CLOSE, EMERGENCY_OPEN, LOCKDOWN]
+      description: Lệnh điều khiển cổng an ninh
+
+    AccessDirection:
+      type: string
+      enum: [IN, OUT]
+      description: Chiều di chuyển của người quẹt thẻ
+
+    AccessDecision:
+      type: string
+      enum: [GRANTED, DENIED]
+      description: Quyết định cho phép hay từ chối
+
+    GateCommandRequest:
+      type: object
+      required: [command, requestedBy]
+      properties:
+        command:
+          $ref: "#/components/schemas/GateCommand"
+        requestedBy:
+          type: string
+          minLength: 3
+          description: ID của nhân sự hoặc hệ thống yêu cầu lệnh
+          example: CORE-SYS-01
+        reason:
+          type: ["string", "null"]
+          description: Lý do thực hiện lệnh. Bắt buộc với EMERGENCY_OPEN và LOCKDOWN.
+          example: Fire alarm triggered at zone B
+
+    GateCommandResponse:
+      type: object
+      required: [gateId, status, gateStatus, executedAt]
+      properties:
+        gateId:
+          type: string
+          example: GATE-A-01
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+          example: SUCCESS
+        gateStatus:
+          type: string
+          enum: [OPENED, CLOSED, LOCKED]
+          example: OPENED
+        executedAt:
+          type: string
+          format: date-time
+          example: "2026-05-13T08:30:01+07:00"
+
+    AccessVerifyRequest:
+      type: object
+      required: [cardId, gateId, direction, timestamp]
+      properties:
+        cardId:
+          type: string
+          minLength: 3
+          description: Mã RFID/NFC của thẻ
+          example: CARD-NV-0042
+        gateId:
+          type: string
+          minLength: 3
+          description: Cổng nơi quẹt thẻ
+          example: GATE-A-01
+        direction:
+          $ref: "#/components/schemas/AccessDirection"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-13T08:30:00+07:00"
+
+    AccessVerifyResponse:
+      type: object
+      required: [decision, logId]
+      properties:
+        decision:
+          $ref: "#/components/schemas/AccessDecision"
+        logId:
+          type: string
+          description: Mã tham chiếu của phiên kiểm tra
+          example: LOG-20260513-0001
+        reason:
+          type: ["string", "null"]
+          description: Lý do từ chối (null nếu GRANTED)
+          example: Thẻ hết hạn
+
+    HealthResponse:
+      type: object
+      required: [status, service, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        service:
+          type: string
+          example: access-gate
+        version:
+          type: string
+          example: 1.0.0
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string

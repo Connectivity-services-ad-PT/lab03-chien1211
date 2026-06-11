@@ -1,0 +1,161 @@
+openapi: 3.1.0
+info:
+  title: Smart Campus - Access Gate & Core Policy API
+  version: 1.0.0
+  description: API phục vụ kiểm soát ra/vào và điều khiển cổng an ninh tại Smart Campus (Phụ trách bởi nhóm A3).
+servers:
+  - url: http://localhost:4010
+    description: Prism Mock Server
+  - url: http://localhost:8000
+    description: Local development server
+tags:
+  - name: Gate Control
+    description: Các API điều khiển phần cứng cổng ra vào (Pair 03)
+  - name: Access Policy
+    description: Các API kiểm tra quyền ra vào (Pair 10)
+  - name: system
+    description: Health check
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Kiểm tra trạng thái service Access Gate
+      security: []
+      responses:
+        '200':
+          description: Service hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+                  service: { type: string, example: "access-gate" }
+  /api/v1/gates/{gateId}/command:
+    post:
+      tags: [Gate Control]
+      summary: Nhận lệnh điều khiển cổng từ hệ thống trung tâm
+      operationId: executeGateCommand
+      parameters:
+        - name: gateId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "GATE-A-01"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [command, requestedBy]
+              properties:
+                command:
+                  type: string
+                  enum: [OPEN, CLOSE, EMERGENCY_OPEN, LOCKDOWN]
+                requestedBy:
+                  type: string
+                reason:
+                  type: string
+            examples:
+              open_gate:
+                value:
+                  command: "OPEN"
+                  requestedBy: "ADMIN-01"
+      responses:
+        '200':
+          description: Lệnh được thực thi thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "SUCCESS" }
+                  gateStatus: { type: string, example: "OPENED" }
+        '400':
+          description: Lệnh không hợp lệ
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Xung đột trạng thái (VD. Cổng đang kẹt cơ học)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/access/verify:
+    post:
+      tags: [Access Policy]
+      summary: Xác minh quyền ra/vào khi có người quẹt thẻ
+      operationId: verifyAccess
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cardId, gateId, direction, timestamp]
+              properties:
+                cardId: { type: string }
+                gateId: { type: string }
+                direction: { type: string, enum: [IN, OUT] }
+                timestamp: { type: string, format: date-time }
+            examples:
+              swipe_in:
+                value:
+                  cardId: "CARD123"
+                  gateId: "GATE-01"
+                  direction: "IN"
+                  timestamp: "2026-06-02T10:00:00Z"
+      responses:
+        '200':
+          description: Trả về quyết định cho phép hoặc từ chối
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [decision, logId]
+                properties:
+                  decision: { type: string, enum: [GRANTED, DENIED] }
+                  reason: { type: string, example: "Thẻ hợp lệ" }
+                  logId: { type: string }
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string }

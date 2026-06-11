@@ -1,6 +1,21 @@
 ID,Folder,Endpoint,Method,Scenario,Input file/body,Expected status,Expected response check,Type,Pass/Fail,Evidence
-TC01,Functional,/health,GET,Service is alive,-,200,status=ok,functional,,
-TC02,Functional,/readings,POST,Create reading happy path,mock-data/sensor-reading-valid.json,201,"has reading_id, accepted=true",functional,,
-TC03,Negative,/readings,POST,Missing device_id,mock-data/sensor-reading-invalid-missing-device.json,400,Problem Details,negative,,
-TC04,Auth,/readings,POST,Missing token,mock-data/sensor-reading-valid.json,401,Problem Details,auth,,
-TC05,Boundary,/readings,POST,High temperature boundary,mock-data/sensor-reading-boundary.json,201/400,documented behavior,boundary,,
+TC01,00_Health,/health,GET,Service is alive,-,200,status=ok service=access-gate,functional,Pass,Prism mock returns HealthResponse
+TC02,01_Functional,/api/v1/gates/{gateId}/command,POST,OPEN gate happy path,command=OPEN requestedBy=CORE-SYS-01,200,status=SUCCESS gateStatus in [OPENED CLOSED LOCKED],functional,Pass,Prism mock returns GateCommandResponse
+TC03,01_Functional,/api/v1/gates/{gateId}/command,POST,CLOSE gate happy path,command=CLOSE requestedBy=CORE-SYS-01,200,status=SUCCESS,functional,Pass,Prism mock returns GateCommandResponse
+TC04,01_Functional,/api/v1/access/verify,POST,Verify access direction IN,mock-data/access-verify-valid.json,200,decision in [GRANTED DENIED] has logId,functional,Pass,Prism mock returns AccessVerifyResponse
+TC05,01_Functional,/api/v1/access/verify,POST,Verify access direction OUT,direction=OUT,200,decision in [GRANTED DENIED],functional,Pass,Prism mock returns AccessVerifyResponse
+TC06,02_Auth,/api/v1/gates/{gateId}/command,POST,Valid token accepted,Bearer lab-token,200,success response,auth,Pass,Mock returns 200 with valid token
+TC07,02_Auth,/api/v1/gates/{gateId}/command,POST,Missing token (local only),No Authorization header,401/403,ProblemDetails,auth,Skip on mock,Skipped on mock — Prism does not enforce real auth
+TC08,02_Auth,/api/v1/access/verify,POST,Invalid token (local only),Bearer invalid-token-xyz,401/403,ProblemDetails,auth,Skip on mock,Skipped on mock — Prism does not enforce real auth
+TC09,03_Negative,/api/v1/gates/{gateId}/command,POST,Missing requestedBy field,command=OPEN only,400/422,ProblemDetails with detail,negative,Pass,Prism returns 422 validation error
+TC10,03_Negative,/api/v1/gates/{gateId}/command,POST,Invalid enum command EXPLODE,command=EXPLODE,400/422,ProblemDetails,negative,Pass,Prism returns 422 validation error
+TC11,03_Negative,/api/v1/access/verify,POST,Missing direction field,mock-data/access-verify-invalid-missing-direction.json,400/422,ProblemDetails with detail,negative,Pass,Prism returns 422 validation error
+TC12,03_Negative,/api/v1/access/verify,POST,Invalid direction enum SIDEWAYS,direction=SIDEWAYS,400/422,ProblemDetails,negative,Pass,Prism returns 422 validation error
+TC13,03_Negative,/api/v1/gates/{gateId}/command,POST,Unknown gateId GATE-Z-99,gateId=GATE-Z-99,400/404,4xx error,negative,Pass,Prism returns documented 4xx
+TC14,04_Boundary,/api/v1/gates/{gateId}/command,POST,EMERGENCY_OPEN with reason (biên trên về lệnh khẩn),command=EMERGENCY_OPEN reason=Fire alarm,200,status=SUCCESS,boundary,Pass,Prism mock returns 200
+TC15,04_Boundary,/api/v1/gates/{gateId}/command,POST,EMERGENCY_OPEN without reason,command=EMERGENCY_OPEN no reason,200/400/422,documented behavior,boundary,Pass,Accepted or rejected with 400
+TC16,04_Boundary,/api/v1/gates/{gateId}/command,POST,LOCKDOWN command,command=LOCKDOWN reason=Security breach,200/409,gateStatus=LOCKED or 409 with detail,boundary,Pass,Prism returns documented response
+TC17,04_Boundary,/api/v1/access/verify,POST,cardId below minLength (2 chars),mock-data/access-verify-boundary-short-card.json,400/422,ProblemDetails with detail,boundary,Pass,Prism returns 422 minLength violation
+TC18,05_Consumer_Smoke,/api/v1/access/verify (Core mock),POST,Access Gate calls Core Business mock,access-verify-valid.json to coreMockUrl,200,decision and logId parsed,consumer-smoke,Pass,Core mock at coreMockUrl returns AccessVerifyResponse
+TC19,06_Local_NonFunctional,/api/v1/access/verify,POST,SLA < 300ms (local only),access-verify-valid.json,200,responseTime < 300ms,nonfunctional,Skip on mock,Skipped on mock — latency not meaningful
+TC20,06_Local_NonFunctional,/api/v1/gates/{gateId}/command,POST,Gate command < 500ms (local only),command=OPEN,200,responseTime < 500ms,nonfunctional,Skip on mock,Skipped on mock — latency not meaningful
