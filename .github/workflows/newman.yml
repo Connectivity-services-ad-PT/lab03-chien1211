@@ -25,15 +25,17 @@ jobs:
       - name: Lint OpenAPI Contracts
         run: npm run lint:contracts
 
-      - name: Start Prism Mock Servers
+      - name: Start Prism Mocks and Run Newman Tests
         run: |
           chmod +x ./scripts/start-prism-mock.sh
-          # start all mocks in background so the workflow can continue
+          # Khởi động mock servers ở chế độ ngầm
           ./scripts/start-prism-mock.sh all &
-          sleep 5 # wait for Prism to bind ports
-
-      - name: Run Newman Tests against Gate Mock
-        run: npm run test:mock
+          
+          # Đợi tối đa 30s để đảm bảo Prism đã bind thành công port 4010 (gate) và 4011 (vision)
+          npx wait-on tcp:4010 tcp:4011 -t 30000
+          
+          # Tiến hành chạy test, lúc này servers chắc chắn đang sống
+          npm run test:mock
 
       - name: Show Prism logs on failure
         if: failure()
