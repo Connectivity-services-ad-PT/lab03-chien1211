@@ -190,7 +190,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AccessVerifyResponse"
               examples:
-                granted:
+                default:
                   value:
                     decision: GRANTED
                     logId: LOG-20260513-0001
@@ -359,7 +359,7 @@ components:
           type: string
           nullable: true
           description: Lý do từ chối (null nếu GRANTED)
-          example: Thẻ hết hạn
+          example: ""
 
     HealthResponse:
       type: object
