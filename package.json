@@ -6,9 +6,10 @@
   "scripts": {
     "mock:iot": "prism mock contracts/iot-ingestion.openapi.yaml -p 4010 --host 0.0.0.0",
     "mock:vision": "prism mock contracts/ai-vision.openapi.yaml -p 4011 --host 0.0.0.0",
-    "mock:all": "sh -c 'npm run mock:iot & npm run mock:vision & wait'",
-    "lint:contracts": "spectral lint contracts/*.yaml --fail-severity error",
-    "test:mock": "newman run postman/collections/FIT4110_lab03_iot_ingestion.postman_collection.json -e postman/environments/FIT4110_lab03_mock.postman_environment.json --reporters cli,junit --reporter-junit-export reports/newman-report-mock.xml",
+    "mock:gate": "prism mock contracts/gate.openapi.yaml -p 4010 --host 0.0.0.0",
+    "mock:all": "sh -c 'npm run mock:iot & npm run mock:vision & npm run mock:gate & wait'",
+    "lint:contracts": "spectral lint contracts/gate.openapi.yaml",
+    "test:mock": "newman run postman/collections/FIT4110_lab03_gate.postman_collection.json -e postman/environments/FIT4110_lab03_gate_mock.postman_environment.json",
     "test:local": "newman run postman/collections/FIT4110_lab03_iot_ingestion.postman_collection.json -e postman/environments/FIT4110_lab03_local.postman_environment.json --reporters cli,junit --reporter-junit-export reports/newman-report-local.xml",
     "test:html": "newman run postman/collections/FIT4110_lab03_iot_ingestion.postman_collection.json -e postman/environments/FIT4110_lab03_mock.postman_environment.json --reporters cli,htmlextra --reporter-htmlextra-export reports/newman-report.html",
     "test:ci": "npm run lint:contracts && npm run test:mock"

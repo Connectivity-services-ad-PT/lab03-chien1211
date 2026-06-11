@@ -22,18 +22,17 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Lint OpenAPI contracts
+      - name: Lint OpenAPI Contracts
         run: npm run lint:contracts
 
-      - name: Start Prism mock servers
+      - name: Start Prism Mock Servers
         run: |
-          nohup npm run mock:iot > prism-iot.log 2>&1 &
-          nohup npm run mock:vision > prism-vision.log 2>&1 &
+          chmod +x ./scripts/start-prism-mock.sh
+          # start all mocks in background so the workflow can continue
+          ./scripts/start-prism-mock.sh all &
+          sleep 5 # wait for Prism to bind ports
 
-      - name: Wait for mock servers
-        run: npx wait-on http://localhost:4010/health http://localhost:4011/health --timeout 30000
-
-      - name: Run Newman contract tests
+      - name: Run Newman Tests against Gate Mock
         run: npm run test:mock
 
       - name: Show Prism logs on failure
