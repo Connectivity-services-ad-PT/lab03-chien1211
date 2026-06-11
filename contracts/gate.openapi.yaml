@@ -194,7 +194,7 @@ paths:
                   value:
                     decision: GRANTED
                     logId: LOG-20260513-0001
-                    reason: ""
+                    reason: null
                 denied_expired:
                   value:
                     decision: DENIED
